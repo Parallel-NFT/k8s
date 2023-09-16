@@ -385,6 +385,12 @@ defmodule K8s.Client.Mint.HTTPAdapter do
     end
   end
 
+  def handle_info(info_msg, state) do
+    Logger.info(log_prefix("got unhandled handle_info msg=#{inspect info_msg}"), library: :k8s)
+
+    {:noreply, state}
+  end
+
   @impl true
   def terminate(reason, state) do
     state = state
