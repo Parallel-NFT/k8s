@@ -356,7 +356,7 @@ defmodule K8s.Client.Mint.HTTPAdapter do
         {:ok, conn} ->
           Process.send_after(self(), :healthcheck, jitter())
           state = %__MODULE__{state | conn: conn}
-          {:ok, state}
+          {:noreply, state}
 
         {:error, error} ->
           Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
@@ -491,7 +491,7 @@ defmodule K8s.Client.Mint.HTTPAdapter do
         {:ok, conn} ->
           Process.send_after(self(), :healthcheck, jitter())
           state = %__MODULE__{state | conn: conn}
-          {:ok, state}
+          {:noreply, state}
 
         {:error, error} ->
           Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
