@@ -153,6 +153,8 @@ defmodule K8s.Client.Mint.HTTPAdapter do
   def init({scheme, host, port, opts}) do
     case Mint.HTTP.connect(scheme, host, port, opts) do
       {:ok, conn} ->
+        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
+
         Process.send_after(self(), :healthcheck, jitter())
         state = %__MODULE__{conn: conn, scheme: scheme, host: host, port: port, opts: opts}
         {:ok, state}
@@ -330,10 +332,6 @@ defmodule K8s.Client.Mint.HTTPAdapter do
     end
   end
 
-  def jitter() do
-    @healthcheck_freq * 1_000 + :rand.uniform(2000)
-  end
-
   # This is called regularly to check whether the connection is still open. If
   # it's not open, and all buffers are emptied, this process is considered
   # garbage and is stopped.
@@ -360,10 +358,30 @@ defmodule K8s.Client.Mint.HTTPAdapter do
 
         {:error, error} ->
           Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
-          {:stop, HTTPError.from_exception(error)}
+          {:stop, {:shutdown, :closed}, state}
       end
 
       # {:stop, {:shutdown, :closed}, state}
+    end
+  end
+
+  def handle_info(
+        {:ssl_closed, _},
+        %__MODULE__{scheme: scheme, host: host, port: port, opts: opts} = state
+      ) do
+    case Mint.HTTP.connect(scheme, host, port, opts) do
+      {:ok, conn} ->
+        Logger.error(log_prefix("Reconnecting HTTPAdapter after close, and re-initializing"),
+          library: :k8s
+        )
+
+        Process.send_after(self(), :healthcheck, jitter())
+        state = %__MODULE__{state | conn: conn}
+        {:noreply, state}
+
+      {:error, error} ->
+        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer error=#{inspect error}"), library: :k8s)
+        {:stop, {:shutdown, :closed}, state}
     end
   end
 
@@ -489,12 +507,17 @@ defmodule K8s.Client.Mint.HTTPAdapter do
 
       case Mint.HTTP.connect(scheme, host, port, opts) do
         {:ok, conn} ->
+          Logger.error(
+            log_prefix("Reconnecting HTTPAdapter in #{__MODULE__}, :shutdown_if_closed"),
+            library: :k8s
+          )
+
           Process.send_after(self(), :healthcheck, jitter())
           state = %__MODULE__{state | conn: conn}
           {:noreply, state}
 
         {:error, error} ->
-          Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
+          Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer error=#{inspect error}"), library: :k8s)
           {:stop, {:shutdown, :closed}, state}
       end
     end
@@ -503,5 +526,9 @@ defmodule K8s.Client.Mint.HTTPAdapter do
   @spec any_non_empty_buffers?(t()) :: boolean()
   defp any_non_empty_buffers?(state) do
     Enum.any?(state.requests, fn {_, request} -> request.buffer != [] end)
+  end
+
+  defp jitter() do
+    @healthcheck_freq * 1_000 + :rand.uniform(2000)
   end
 end
