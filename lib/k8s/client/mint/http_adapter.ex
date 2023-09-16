@@ -476,16 +476,27 @@ defmodule K8s.Client.Mint.HTTPAdapter do
   end
 
   @spec shutdown_if_closed(t()) :: {:noreply, t()} | {:stop, {:shutdown, :closed}, t()}
-  defp shutdown_if_closed(state) do
+  defp shutdown_if_closed(%__MODULE__{scheme: scheme, host: host, port: port, opts: opts} = state) do
     if Mint.HTTP.open?(state.conn) or any_non_empty_buffers?(state) do
       {:noreply, state}
     else
       Logger.warning(
-        log_prefix("Connection closed for reading and writing - stopping this process."),
+        log_prefix(
+          "Connection closed for reading and writing - attempting to reconnect this process."
+        ),
         library: :k8s
       )
 
-      {:stop, {:shutdown, :closed}, state}
+      case Mint.HTTP.connect(scheme, host, port, opts) do
+        {:ok, conn} ->
+          Process.send_after(self(), :healthcheck, jitter())
+          state = %__MODULE__{state | conn: conn}
+          {:ok, state}
+
+        {:error, error} ->
+          Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
+          {:stop, {:shutdown, :closed}, state}
+      end
     end
   end
 
