@@ -34,7 +34,7 @@ defmodule K8s.Client.Mint.HTTPAdapter do
   require Mint.HTTP
 
   # healthcheck frequency in seconds
-  @healthcheck_freq 30
+  @healthcheck_freq 5
 
   @type connection_args_t ::
           {scheme :: atom(), host :: binary(), port :: integer(), opts :: keyword()}
@@ -47,10 +47,14 @@ defmodule K8s.Client.Mint.HTTPAdapter do
   """
   @type t :: %__MODULE__{
           conn: Mint.HTTP.t(),
-          requests: %{reference() => Request.t()}
+          requests: %{reference() => Request.t()},
+          scheme: atom(),
+          host: binary(),
+          port: integer(),
+          opts: keyword()
         }
 
-  defstruct [:conn, requests: %{}]
+  defstruct [:conn, :scheme, :host, :port, requests: %{}, opts: []]
 
   @doc """
   Opens a connection to Kubernetes, defined by `uri` and `opts`,
@@ -149,8 +153,8 @@ defmodule K8s.Client.Mint.HTTPAdapter do
   def init({scheme, host, port, opts}) do
     case Mint.HTTP.connect(scheme, host, port, opts) do
       {:ok, conn} ->
-        Process.send_after(self(), :healthcheck, @healthcheck_freq * 1_000)
-        state = %__MODULE__{conn: conn}
+        Process.send_after(self(), :healthcheck, jitter())
+        state = %__MODULE__{conn: conn, scheme: scheme, host: host, port: port, opts: opts}
         {:ok, state}
 
       {:error, error} ->
@@ -326,20 +330,40 @@ defmodule K8s.Client.Mint.HTTPAdapter do
     end
   end
 
+  def jitter() do
+    @healthcheck_freq * 1_000 + :rand.uniform(2000)
+  end
+
   # This is called regularly to check whether the connection is still open. If
   # it's not open, and all buffers are emptied, this process is considered
   # garbage and is stopped.
-  def handle_info(:healthcheck, state) do
+  def handle_info(
+        :healthcheck,
+        %__MODULE__{scheme: scheme, host: host, port: port, opts: opts} = state
+      ) do
     if Mint.HTTP.open?(state.conn) or any_non_empty_buffers?(state) do
-      Process.send_after(self(), :healthcheck, @healthcheck_freq * 1000)
+      Process.send_after(self(), :healthcheck, jitter())
       {:noreply, state}
     else
       Logger.warning(
-        log_prefix("Connection closed for reading and writing - stopping this process."),
+        log_prefix(
+          "Connection closed for reading and writing - attempting to reconnect stopping this process."
+        ),
         library: :k8s
       )
 
-      {:stop, {:shutdown, :closed}, state}
+      case Mint.HTTP.connect(scheme, host, port, opts) do
+        {:ok, conn} ->
+          Process.send_after(self(), :healthcheck, jitter())
+          state = %__MODULE__{state | conn: conn}
+          {:ok, state}
+
+        {:error, error} ->
+          Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
+          {:stop, HTTPError.from_exception(error)}
+      end
+
+      # {:stop, {:shutdown, :closed}, state}
     end
   end
 
