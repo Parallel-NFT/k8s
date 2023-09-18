@@ -150,18 +150,21 @@ defmodule K8s.Client.Mint.HTTPAdapter do
   end
 
   @impl true
-  def init({scheme, host, port, opts}) do
+  def init({_scheme, _host, _port, _opts} = args_tuple) do
+    connect(args_tuple)
+  end
+
+  def connect({scheme, host, port, opts}) do
     case Mint.HTTP.connect(scheme, host, port, opts) do
       {:ok, conn} ->
         Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
 
-        Process.send_after(self(), :healthcheck, jitter())
         state = %__MODULE__{conn: conn, scheme: scheme, host: host, port: port, opts: opts}
         {:ok, state}
 
       {:error, error} ->
         Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
-        {:stop, HTTPError.from_exception(error)}
+        {:error, HTTPError.from_exception(error)}
     end
   end
 
@@ -350,43 +353,18 @@ defmodule K8s.Client.Mint.HTTPAdapter do
         library: :k8s
       )
 
-      case Mint.HTTP.connect(scheme, host, port, opts) do
+      case connect({scheme, host, port, opts}) do
         {:ok, conn} ->
           Process.send_after(self(), :healthcheck, jitter())
-          state = %__MODULE__{state | conn: conn}
-          {:noreply, state}
-
+          {:noreply, struct!(state, conn: conn)}
         {:error, error} ->
-          Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
           {:stop, {:shutdown, :closed}, state}
       end
-
-      # {:stop, {:shutdown, :closed}, state}
-    end
-  end
-
-  def handle_info(
-        {:ssl_closed, _},
-        %__MODULE__{scheme: scheme, host: host, port: port, opts: opts} = state
-      ) do
-    case Mint.HTTP.connect(scheme, host, port, opts) do
-      {:ok, conn} ->
-        Logger.error(log_prefix("Reconnecting HTTPAdapter after close, and re-initializing"),
-          library: :k8s
-        )
-
-        Process.send_after(self(), :healthcheck, jitter())
-        state = %__MODULE__{state | conn: conn}
-        {:noreply, state}
-
-      {:error, error} ->
-        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer error=#{inspect error}"), library: :k8s)
-        {:stop, {:shutdown, :closed}, state}
     end
   end
 
   def handle_info(info_msg, state) do
-    Logger.info(log_prefix("got unhandled handle_info msg=#{inspect info_msg}"), library: :k8s)
+    Logger.info(log_prefix("got unhandled handle_info msg=#{inspect info_msg} - possibly old connection"), library: :k8s)
 
     {:noreply, state}
   end
@@ -511,19 +489,10 @@ defmodule K8s.Client.Mint.HTTPAdapter do
         library: :k8s
       )
 
-      case Mint.HTTP.connect(scheme, host, port, opts) do
+      case connect({scheme, host, port, opts}) do
         {:ok, conn} ->
-          Logger.error(
-            log_prefix("Reconnecting HTTPAdapter in #{__MODULE__}, :shutdown_if_closed"),
-            library: :k8s
-          )
-
-          Process.send_after(self(), :healthcheck, jitter())
-          state = %__MODULE__{state | conn: conn}
-          {:noreply, state}
-
+          {:noreply, struct!(state, conn: conn)}
         {:error, error} ->
-          Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer error=#{inspect error}"), library: :k8s)
           {:stop, {:shutdown, :closed}, state}
       end
     end
