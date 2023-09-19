@@ -163,7 +163,7 @@ defmodule K8s.Client.Mint.HTTPAdapter do
         {:ok, state}
 
       {:error, error} when retry_count > 0 ->
-        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer. #{inspect error} Retrying...",), library: :k8s)
+        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer. #{inspect error} Retrying..."), library: :k8s)
 
         # Introduce a delay (in milliseconds) before retrying
         Process.sleep(retry_count * 500)
