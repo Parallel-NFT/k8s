@@ -154,16 +154,24 @@ defmodule K8s.Client.Mint.HTTPAdapter do
     connect(args_tuple)
   end
 
-  def connect({scheme, host, port, opts}) do
+  def connect({scheme, host, port, opts}, retry_count \\ 2) do
     case Mint.HTTP.connect(scheme, host, port, opts) do
       {:ok, conn} ->
-        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
+        Logger.error(log_prefix("Completed initializing HTTPAdapter GenServer"), library: :k8s)
 
         state = %__MODULE__{conn: conn, scheme: scheme, host: host, port: port, opts: opts}
         {:ok, state}
 
+      {:error, error} when retry_count > 0 ->
+        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer. #{inspect error} Retrying...",), library: :k8s)
+
+        # Introduce a delay (in milliseconds) before retrying
+        Process.sleep(retry_count * 500)
+
+        connect({scheme, host, port, opts}, retry_count - 1)
+
       {:error, error} ->
-        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer"), library: :k8s)
+        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer  #{inspect error}"), library: :k8s)
         {:error, HTTPError.from_exception(error)}
     end
   end
