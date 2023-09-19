@@ -153,7 +153,7 @@ defmodule K8s.Client.Mint.HTTPAdapter do
   def init({scheme, host, port, opts} = args_tuple) do
     case connect({scheme, host, port, opts}) do
       {:ok, conn} ->
-        {:noreply,
+        {:ok,
          %__MODULE__{
            conn: conn,
            scheme: scheme,
@@ -164,8 +164,7 @@ defmodule K8s.Client.Mint.HTTPAdapter do
          }}
 
       {:error, error} ->
-        {:stop, {:shutdown, :closed},
-         %__MODULE__{conn: nil, scheme: scheme, host: host, port: port, opts: opts, requests: %{}}}
+        {:stop, {:shutdown, :closed}}
     end
   end
 
