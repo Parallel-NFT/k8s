@@ -150,8 +150,23 @@ defmodule K8s.Client.Mint.HTTPAdapter do
   end
 
   @impl true
-  def init({_scheme, _host, _port, _opts} = args_tuple) do
-    connect(args_tuple)
+  def init({scheme, host, port, opts} = args_tuple) do
+    case connect({scheme, host, port, opts}) do
+      {:ok, conn} ->
+        {:noreply,
+         %__MODULE__{
+           conn: conn,
+           scheme: scheme,
+           host: host,
+           port: port,
+           opts: opts,
+           requests: %{}
+         }}
+
+      {:error, error} ->
+        {:stop, {:shutdown, :closed},
+         %__MODULE__{conn: nil, scheme: scheme, host: host, port: port, opts: opts, requests: %{}}}
+    end
   end
 
   def connect({scheme, host, port, opts}, retry_count \\ 2) do
@@ -159,11 +174,13 @@ defmodule K8s.Client.Mint.HTTPAdapter do
       {:ok, conn} ->
         Logger.error(log_prefix("Completed initializing HTTPAdapter GenServer"), library: :k8s)
 
-        state = %__MODULE__{conn: conn, scheme: scheme, host: host, port: port, opts: opts}
-        {:ok, state}
+        {:ok, conn}
 
       {:error, error} when retry_count > 0 ->
-        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer. #{inspect error} Retrying..."), library: :k8s)
+        Logger.error(
+          log_prefix("Failed initializing HTTPAdapter GenServer. #{inspect(error)} Retrying..."),
+          library: :k8s
+        )
 
         # Introduce a delay (in milliseconds) before retrying
         Process.sleep(retry_count * 500)
@@ -171,7 +188,10 @@ defmodule K8s.Client.Mint.HTTPAdapter do
         connect({scheme, host, port, opts}, retry_count - 1)
 
       {:error, error} ->
-        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer  #{inspect error}"), library: :k8s)
+        Logger.error(log_prefix("Failed initializing HTTPAdapter GenServer  #{inspect(error)}"),
+          library: :k8s
+        )
+
         {:error, HTTPError.from_exception(error)}
     end
   end
@@ -365,6 +385,7 @@ defmodule K8s.Client.Mint.HTTPAdapter do
         {:ok, conn} ->
           Process.send_after(self(), :healthcheck, jitter())
           {:noreply, struct!(state, conn: conn)}
+
         {:error, error} ->
           {:stop, {:shutdown, :closed}, state}
       end
@@ -372,7 +393,10 @@ defmodule K8s.Client.Mint.HTTPAdapter do
   end
 
   def handle_info(info_msg, state) do
-    Logger.info(log_prefix("got unhandled handle_info msg=#{inspect info_msg} - possibly old connection"), library: :k8s)
+    Logger.info(
+      log_prefix("got unhandled handle_info msg=#{inspect(info_msg)} - possibly old connection"),
+      library: :k8s
+    )
 
     {:noreply, state}
   end
@@ -500,6 +524,7 @@ defmodule K8s.Client.Mint.HTTPAdapter do
       case connect({scheme, host, port, opts}) do
         {:ok, conn} ->
           {:noreply, struct!(state, conn: conn)}
+
         {:error, error} ->
           {:stop, {:shutdown, :closed}, state}
       end
