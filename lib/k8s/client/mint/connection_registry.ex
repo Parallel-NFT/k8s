@@ -48,7 +48,7 @@ defmodule K8s.Client.Mint.ConnectionRegistry do
   """
   @spec checkout(uriopts()) :: {:ok, adapter_pool_t()} | {:error, HTTPError.t()}
   def checkout({uri, opts}) do
-    Logger.info(log_prefix("Checking out adapter=#{inspect uri} opts=#{opts}"), library: :k8s)
+    Logger.info(log_prefix("Checking out adapter=#{inspect uri} opts=#{inspect opts}"), library: :k8s)
     key = HTTPAdapter.connection_args(uri, opts)
 
     case GenServer.call(__MODULE__, {:get_or_open, key}, 5000) do
