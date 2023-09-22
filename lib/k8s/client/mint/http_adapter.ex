@@ -196,9 +196,26 @@ defmodule K8s.Client.Mint.HTTPAdapter do
   end
 
   @impl true
-  def handle_call({:open?, type}, _from, state) do
-    {:reply, Mint.HTTP.open?(state.conn, type), state}
+  def handle_call({:open?, type}, _from, %__MODULE__{conn: %Mint.HTTP2{} = conn} = state) do
+    Logger.warning("Inside connection -> pinging connection to test openess")
+
+    case Mint.HTTP2.ping(conn) do
+      {:error, _conn, reason} ->
+        Logger.warning("Ping error response!")
+        {:reply, false, state}
+
+      {:ok, conn, _ref} ->
+        Logger.warning("Ping success response!")
+        {:reply, Mint.HTTP.open?(conn, type), state}
+
+      other ->
+        Logger.warning("Ping response: #{inspect(other)}")
+        {:reply, false, state}
+    end
   end
+
+  def handle_call({:open?, type}, _from, state),
+    do: {:reply, Mint.HTTP.open?(state.conn, type), state}
 
   def handle_call({:request, method, path, headers, body, pool, stream_to}, from, state) do
     caller_ref = from |> elem(0) |> Process.monitor()

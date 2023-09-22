@@ -48,19 +48,38 @@ defmodule K8s.Client.Mint.ConnectionRegistry do
   """
   @spec checkout(uriopts()) :: {:ok, adapter_pool_t()} | {:error, HTTPError.t()}
   def checkout({uri, opts}) do
-    Logger.info(log_prefix("Checking out adapter=#{inspect uri} opts=#{inspect opts}"), library: :k8s)
+    Logger.info(log_prefix("Checking out adapter=#{inspect(uri)} opts=#{inspect(opts)}"),
+      library: :k8s
+    )
+
     key = HTTPAdapter.connection_args(uri, opts)
 
     case GenServer.call(__MODULE__, {:get_or_open, key}, 5000) do
       {:ok, {:singleton, pid}} ->
-        Logger.info(log_prefix("Checkin singleton pid=#{inspect pid} uri=#{inspect uri} opts=#{inspect opts}"), library: :k8s)
+        Logger.info(
+          log_prefix(
+            "Checkout singleton pid=#{inspect(pid)} uri=#{inspect(uri)} opts=#{inspect(opts)}"
+          ),
+          library: :k8s
+        )
+
         # Check if the connection is open for writing.
         if HTTPAdapter.open?(pid, :write) do
-          Logger.info(log_prefix("Singleton Adapter singleton pid=#{inspect pid} uri=#{inspect uri} opts=#{inspect opts}"), library: :k8s)
+          Logger.info(
+            log_prefix(
+              "Singleton Adapter singleton pid=#{inspect(pid)} uri=#{inspect(uri)} opts=#{inspect(opts)}"
+            ),
+            library: :k8s
+          )
 
           {:ok, %{adapter: pid, pool: nil}}
         else
-          Logger.info(log_prefix("Singleton Adapter singleton not open pid=#{inspect pid} uri=#{inspect uri} opts=#{inspect opts}"), library: :k8s)
+          Logger.info(
+            log_prefix(
+              "Singleton Adapter singleton not open pid=#{inspect(pid)} uri=#{inspect(uri)} opts=#{inspect(opts)}"
+            ),
+            library: :k8s
+          )
 
           # The connection is closed for writing and needs to be removed from
           # the registry
@@ -89,14 +108,18 @@ defmodule K8s.Client.Mint.ConnectionRegistry do
 
   @spec checkin(adapter_pool_t()) :: :ok
   def checkin(%{adapter: worker_pid, pool: nil}) do
-    Logger.info(log_prefix("Checking in adapter=#{inspect worker_pid} pool_pid={nil}"), library: :k8s)
-
+    Logger.info(log_prefix("Checking in adapter=#{inspect(worker_pid)} pool_pid={nil}"),
+      library: :k8s
+    )
 
     :ok
   end
 
   def checkin(%{adapter: worker_pid, pool: pool_pid}) do
-    Logger.info(log_prefix("Checking in adapter=#{inspect worker_pid} pool_pid=#{inspect pool_pid}"), library: :k8s)
+    Logger.info(
+      log_prefix("Checking in adapter=#{inspect(worker_pid)} pool_pid=#{inspect(pool_pid)}"),
+      library: :k8s
+    )
 
     :poolboy.checkin(pool_pid, worker_pid)
   end
@@ -110,7 +133,10 @@ defmodule K8s.Client.Mint.ConnectionRegistry do
 
   @impl true
   def handle_call({:get_or_open, key}, _from, {adapters, refs}) when is_map_key(adapters, key) do
-    Logger.info(log_prefix("Monitor handle_call/4 key=#{inspect key} - adapter_spec=#{inspect adapters}"), library: :k8s)
+    Logger.info(
+      log_prefix("Monitor handle_call/4 key=#{inspect(key)} - adapter_spec=#{inspect(adapters)}"),
+      library: :k8s
+    )
 
     {:reply, Map.fetch(adapters, key), {adapters, refs}}
   end
@@ -124,13 +150,20 @@ defmodule K8s.Client.Mint.ConnectionRegistry do
          {:ok, adapter} <-
            DynamicSupervisor.start_child(K8s.Client.Mint.ConnectionSupervisor, adapter_spec) do
       Mint.HTTP.close(conn)
-      Logger.info(log_prefix("Monitor connect=#{inspect adapter} - adapter_spec=#{inspect adapter_spec}"), library: :k8s)
+
+      Logger.info(
+        log_prefix("Monitor connect=#{inspect(adapter)} - adapter_spec=#{inspect(adapter_spec)}"),
+        library: :k8s
+      )
 
       ref = Process.monitor(adapter)
       refs = Map.put(refs, ref, key)
       adapters = Map.put(adapters, key, {type, adapter})
 
-      Logger.info(log_prefix("Monitor connect=#{inspect adapter} - adapters=#{inspect adapters}"), library: :k8s)
+      Logger.info(
+        log_prefix("Monitor connect=#{inspect(adapter)} - adapters=#{inspect(adapters)}"),
+        library: :k8s
+      )
 
       {:reply, {:ok, {type, adapter}}, {adapters, refs}}
     else
@@ -144,7 +177,9 @@ defmodule K8s.Client.Mint.ConnectionRegistry do
 
   @impl true
   def handle_cast({:remove, key}, {adapters, refs}) do
-    Logger.info(log_prefix("handle_cast/2 to remove connection key=#{inspect key}"), library: :k8s)
+    Logger.info(log_prefix("handle_cast/2 to remove connection key=#{inspect(key)}"),
+      library: :k8s
+    )
 
     adapters = Map.delete(adapters, key)
     {:noreply, {adapters, refs}}
@@ -155,10 +190,22 @@ defmodule K8s.Client.Mint.ConnectionRegistry do
     Logger.debug(log_prefix("DOWN of process #{inspect(pid)} received."), library: :k8s)
     {key, refs} = Map.pop(refs, ref)
 
-    Logger.debug(log_prefix("handle_info - DOWN - pid=#{inspect pid} Keys=#{inspect key} of process refs=#{inspect(refs)} received."), library: :k8s)
+    Logger.debug(
+      log_prefix(
+        "handle_info - DOWN - pid=#{inspect(pid)} Keys=#{inspect(key)} of process refs=#{inspect(refs)} received."
+      ),
+      library: :k8s
+    )
+
     adapters = Map.delete(adapters, key)
 
-    Logger.debug(log_prefix("handle_info - DOWN - pid=#{inspect pid} Adapters=#{inspect key} of process refs=#{inspect(refs)} received."), library: :k8s)
+    Logger.debug(
+      log_prefix(
+        "handle_info - DOWN - pid=#{inspect(pid)} Adapters=#{inspect(key)} of process refs=#{inspect(refs)} received."
+      ),
+      library: :k8s
+    )
+
     {:noreply, {adapters, refs}}
   end
 
@@ -172,12 +219,19 @@ defmodule K8s.Client.Mint.ConnectionRegistry do
   defp get_adapter_spec(conn, conn_args) do
     case Mint.HTTP.protocol(conn) do
       :http1 ->
-        Logger.debug(log_prefix("inspected adapter_pool http1 support for: #{inspect conn_args}"), library: :k8s)
+        Logger.debug(
+          log_prefix("inspected adapter_pool http1 support for: #{inspect(conn_args)}"),
+          library: :k8s
+        )
+
         {:adapter_pool,
          %{id: conn_args, start: {:poolboy, :start_link, [@poolboy_config, conn_args]}}}
 
       :http2 ->
-        Logger.debug(log_prefix("inspected adapter_pool http2 support for: #{inspect conn_args}"), library: :k8s)
+        Logger.debug(
+          log_prefix("inspected adapter_pool http2 support for: #{inspect(conn_args)}"),
+          library: :k8s
+        )
 
         {:singleton, {HTTPAdapter, conn_args}}
     end
