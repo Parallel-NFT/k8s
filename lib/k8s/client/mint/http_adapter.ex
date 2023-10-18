@@ -316,7 +316,7 @@ defmodule K8s.Client.Mint.HTTPAdapter do
       process_responses_or_frames(state, responses)
     else
       {:error, conn, %Mint.TransportError{reason: :closed}, []} ->
-        Logger.debug("The connection was closed.", library: :k8s)
+        Logger.info("The connection was closed.", library: :k8s)
 
         shutdown_if_closed(struct!(state, conn: conn))
 
@@ -392,7 +392,7 @@ defmodule K8s.Client.Mint.HTTPAdapter do
     else
       Logger.warning(
         log_prefix(
-          "Connection closed for reading and writing - attempting to reconnect stopping this process."
+          "healthcheck - Connection closed for reading and writing - attempting to reconnect stopping this process."
         ),
         library: :k8s
       )
@@ -532,7 +532,7 @@ defmodule K8s.Client.Mint.HTTPAdapter do
     else
       Logger.warning(
         log_prefix(
-          "Connection closed for reading and writing - attempting to reconnect this process."
+          "shutdown_if_closed - Connection closed for reading and writing - attempting to reconnect this process."
         ),
         library: :k8s
       )
@@ -542,6 +542,12 @@ defmodule K8s.Client.Mint.HTTPAdapter do
           {:noreply, struct!(state, conn: conn)}
 
         {:error, error} ->
+          Logger.warning(
+            log_prefix(
+              "shutdown_if_closed - {:stop, {:shutdown, :closed}, state} - Got error while trying to reconnect: #{inspect error}"
+            ),
+            library: :k8s
+          )
           {:stop, {:shutdown, :closed}, state}
       end
     end
